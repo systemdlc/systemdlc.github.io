@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>System — Minecraft клиент нового поколения</title>
+<style>
+  /* ---------- Базовый сброс и переменные ---------- */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg-0: #000000;
+    --bg-1: #050507;
+    --bg-2: #0a0a0d;
+    --bg-3: #101015;
+    --panel: #070709;
+    --panel-2: #0c0c10;
+    --border: #16161c;
+    --border-2: #20202a;
+    --text: #f0f0f5;
+    --text-dim: #888894;
+    --text-mute: #4a4a55;
+    --accent: #2f74f1;
+    --accent-2: #5b9cff;
+    --accent-glow: rgba(47, 116, 241, 0.45);
+    --accent-soft: rgba(47, 116, 241, 0.12);
+    --green: #3ddc97;
+    --red: #ff5572;
+    --yellow: #ffc857;
+    --radius: 14px;
+    --radius-sm: 8px;
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg-0);
+    color: var(--text);
+    overflow-x: hidden;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Чёрный фон с лёгким синим свечением */
+  .bg-layer {
+    position: fixed; inset: 0; z-index: -2;
+    background:
+      radial-gradient(circle at 50% 0%, rgba(47, 116, 241, 0.10), transparent 50%),
+      radial-gradient(circle at 80% 90%, rgba(47, 116, 241, 0.04), transparent 50%),
+      #000000;
+  }
+  .bg-grid {
+    position: fixed; inset: 0; z-index: -1; opacity: 0.25;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+    background-size: 44px 44px;
+    mask-image: radial-gradient(ellipse at center top, black 0%, transparent 70%);
+    -webkit-mask-image: radial-gradient(ellipse at center top, black 0%, transparent 70%);
+    animation: gridShift 40s linear infinite;
+  }
+  @keyframes gridShift {
+    0% { background-position: 0 0, 0 0; }
+    100% { background-position: 44px 44px, 44px 44px; }
+  }
+
+  /* Парящие частицы */
+  .particles { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
+  .particle {
+    position: absolute; width: 3px; height: 3px; border-radius: 50%;
+    background: var(--accent); opacity: 0;
+    box-shadow: 0 0 8px var(--accent-glow);
+    animation: floatUp linear infinite;
+  }
+  @keyframes floatUp {
+    0% { transform: translateY(100vh) translateX(0); opacity: 0; }
+    10% { opacity: 0.8; }
+    90% { opacity: 0.4; }
+    100% { transform: translateY(-10vh) translateX(40px); opacity: 0; }
+  }
+
+  /* ---------- Навигация ---------- */
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    background: rgba(0, 0, 0, 0.75);
+    border-bottom: 1px solid var(--border);
+    animation: slideDown 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes slideDown {
+    from { transform: translateY(-100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+  .nav-inner {
+    max-width: 1440px; margin: 0 auto;
+    display: flex; align-items: center; gap: 24px;
+    padding: 14px 28px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; cursor: pointer; }
+  .brand-logo {
+    width: 38px; height: 38px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent) 0%, #1a4fd1 100%);
+    display: grid; place-items: center;
+    font-weight: 800; font-size: 18px; color: #fff;
+    box-shadow: 0 0 22px var(--accent-glow);
+    position: relative; overflow: hidden;
+    animation: logoPulse 3s ease-in-out infinite;
+  }
+  .brand-logo::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.4) 50%, transparent 70%);
+    transform: translateX(-100%);
+    animation: shine 4s ease-in-out infinite;
+  }
+  @keyframes logoPulse {
+    0%, 100% { box-shadow: 0 0 22px var(--accent-glow); }
+    50% { box-shadow: 0 0 36px var(--accent-glow), 0 0 60px rgba(47, 116, 241, 0.25); }
+  }
+  @keyframes shine {
+    0%, 100% { transform: translateX(-100%); }
+    50% { transform: translateX(100%); }
+  }
+  .brand-name {
+    font-size: 19px; font-weight: 700; letter-spacing: -0.02em;
+  }
+  .brand-tag {
+    font-family: var(--mono); font-size: 10px; color: var(--accent-2);
+    padding: 2px 6px; border: 1px solid var(--accent-soft); border-radius: 4px;
+    background: var(--accent-soft);
+  }
+  .nav-links { display: flex; gap: 4px; margin-left: auto; align-items: center; }
+  .nav-link {
+    color: var(--text-dim); text-decoration: none; font-size: 14px; font-weight: 500;
+    padding: 8px 14px; border-radius: var(--radius-sm);
+    transition: color 0.25s, background 0.25s;
+    position: relative;
+  }
+  .nav-link:hover { color: var(--text); background: var(--bg-2); }
+  .nav-link.active { color: var(--text); }
+  .nav-link.active::after {
+    content: ''; position: absolute; left: 14px; right: 14px; bottom: 4px;
+    height: 2px; background: var(--accent); border-radius: 2px;
+    box-shadow: 0 0 10px var(--accent-glow);
+    animation: underlineGrow 0.4s ease both;
+  }
+  @keyframes underlineGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+  .nav-cta {
+    margin-left: 8px; padding: 9px 18px; border-radius: var(--radius-sm);
+    background: linear-gradient(135deg, var(--accent), #1a4fd1);
+    color: #fff; font-weight: 600; font-size: 14px; border: none; cursor: pointer;
+    transition: transform 0.25s, box-shadow 0.25s;
+    box-shadow: 0 4px 14px rgba(47, 116, 241, 0.35);
+    display: inline-flex; align-items: center; text-decoration: none;
+  }
+  .nav-cta:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(47, 116, 241, 0.5); }
+
+  /* ---------- HERO ---------- */
+  .hero {
+    position: relative;
+    max-width: 1440px; margin: 0 auto;
+    padding: 80px 28px 60px;
+    text-align: center;
+    animation: fadeUp 0.9s 0.15s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .hero-eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 11px; color: var(--accent-2);
+    text-transform: uppercase; letter-spacing: 0.18em;
+    padding: 6px 14px; border-radius: 100px;
+    background: var(--accent-soft); border: 1px solid var(--border-2);
+    margin-bottom: 28px;
+  }
+  .hero-eyebrow .dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 8px var(--accent-glow); animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.3); }
+  }
+  .hero-title {
+    font-size: clamp(40px, 7vw, 76px);
+    font-weight: 800; letter-spacing: -0.04em; line-height: 1.02;
+    margin-bottom: 24px;
+  }
+  .hero-title .grad {
+    background: linear-gradient(135deg, var(--accent-2) 0%, var(--accent) 50%, #8ab4ff 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    position: relative; display: inline-block;
+  }
+  .hero-sub {
+    color: var(--text-dim); font-size: clamp(15px, 2vw, 19px);
+    max-width: 620px; margin: 0 auto 36px; line-height: 1.6;
+  }
+  .hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn {
+    padding: 13px 28px; border-radius: 10px; font-weight: 600; font-size: 14px;
+    cursor: pointer; border: none; font-family: var(--font);
+    transition: transform 0.25s, box-shadow 0.25s;
+    display: inline-flex; align-items: center; gap: 8px; text-decoration: none;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, var(--accent), #1a4fd1); color: #fff;
+    box-shadow: 0 6px 20px rgba(47, 116, 241, 0.4);
+  }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(47, 116, 241, 0.55); }
+  .btn-ghost {
+    background: rgba(255,255,255,0.03); color: var(--text); border: 1px solid var(--border-2);
+  }
+  .btn-ghost:hover { background: var(--bg-2); border-color: var(--accent); }
+  .hero-meta {
+    margin-top: 40px; display: inline-flex; align-items: center; gap: 10px;
+    font-family: var(--mono); font-size: 12px; color: var(--text-mute);
+    padding: 8px 14px; border-radius: 100px; background: var(--bg-1);
+    border: 1px solid var(--border);
+  }
+  .hero-meta svg { width: 14px; height: 14px; color: var(--accent-2); }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  /* ---------- Модальное окно-предупреждение ---------- */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0);
+    backdrop-filter: blur(0px); -webkit-backdrop-filter: blur(0px);
+    opacity: 0; visibility: hidden;
+    transition: opacity 0.35s ease, visibility 0.35s ease, background 0.35s ease, backdrop-filter 0.35s ease;
+  }
+  .modal-overlay.open {
+    opacity: 1; visibility: visible;
+    background: rgba(0, 0, 0, 0.78);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  }
+
+  .modal-card {
+    position: relative;
+    width: 100%; max-width: 620px;
+    max-height: 90vh; overflow-y: auto;
+    transform: translateY(40px) scale(0.92);
+    opacity: 0;
+    transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.35s ease;
+  }
+  .modal-overlay.open .modal-card {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  /* Кастомный скроллбар в модалке */
+  .modal-card::-webkit-scrollbar { width: 8px; }
+  .modal-card::-webkit-scrollbar-track { background: transparent; }
+  .modal-card::-webkit-scrollbar-thumb { background: rgba(255, 200, 87, 0.3); border-radius: 4px; }
+
+  .modal-close {
+    position: absolute; top: 14px; right: 14px; z-index: 5;
+    width: 36px; height: 36px; border-radius: 8px;
+    display: grid; place-items: center;
+    background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 200, 87, 0.25);
+    color: var(--text-dim); cursor: pointer;
+    transition: all 0.25s;
+  }
+  .modal-close svg { width: 18px; height: 18px; }
+  .modal-close:hover { color: var(--yellow); border-color: var(--yellow); transform: rotate(90deg); background: rgba(255, 200, 87, 0.12); }
+
+  .modal-actions {
+    display: flex; gap: 12px; justify-content: flex-end; flex-wrap: wrap;
+    margin-top: 24px; padding-top: 20px; border-top: 1px solid rgba(255, 200, 87, 0.15);
+    position: relative;
+  }
+  .modal-confirm {
+    background: linear-gradient(135deg, var(--yellow), #ff9d2f) !important;
+    color: #1a1206 !important;
+    box-shadow: 0 6px 20px rgba(255, 200, 87, 0.4) !important;
+  }
+  .modal-confirm:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 28px rgba(255, 200, 87, 0.55) !important;
+  }
+  .confirm-ico {
+    display: inline-block;
+    animation: downloadBounce 1.4s ease-in-out infinite;
+  }
+  @keyframes downloadBounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(3px); }
+  }
+
+  .warn-card {
+    position: relative;
+    padding: 32px 36px;
+    border-radius: var(--radius);
+    background:
+      radial-gradient(circle at 0% 0%, rgba(255, 200, 87, 0.10), transparent 50%),
+      linear-gradient(180deg, #14100a 0%, #0a0907 100%);
+    border: 1px solid rgba(255, 200, 87, 0.35);
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 200, 87, 0.08) inset;
+  }
+  /* Анимированная светящаяся полоса слева */
+  .warn-card::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+    background: linear-gradient(180deg, var(--yellow), #ff9d2f);
+    box-shadow: 0 0 16px rgba(255, 200, 87, 0.6);
+    animation: warnPulse 2.4s ease-in-out infinite;
+  }
+  /* Лёгкая штриховка фона */
+  .warn-card::after {
+    content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0.4;
+    background-image: repeating-linear-gradient(
+      45deg, transparent, transparent 14px,
+      rgba(255, 200, 87, 0.025) 14px, rgba(255, 200, 87, 0.025) 28px);
+  }
+  @keyframes warnPulse {
+    0%, 100% { box-shadow: 0 0 16px rgba(255, 200, 87, 0.6); }
+    50% { box-shadow: 0 0 28px rgba(255, 200, 87, 0.9), 0 0 48px rgba(255, 200, 87, 0.3); }
+  }
+
+  /* Stagger-анимация элементов внутри модалки при открытии */
+  .modal-overlay.open .warn-head,
+  .modal-overlay.open .warn-list li,
+  .modal-overlay.open .warn-note,
+  .modal-overlay.open .modal-actions {
+    animation: modalItemIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .modal-overlay.open .warn-head { animation-delay: 0.15s; }
+  .modal-overlay.open .warn-list li:nth-child(1) { animation-delay: 0.25s; }
+  .modal-overlay.open .warn-list li:nth-child(2) { animation-delay: 0.33s; }
+  .modal-overlay.open .warn-list li:nth-child(3) { animation-delay: 0.41s; }
+  .modal-overlay.open .warn-note { animation-delay: 0.5s; }
+  .modal-overlay.open .modal-actions { animation-delay: 0.58s; }
+  @keyframes modalItemIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .warn-head { display: flex; align-items: flex-start; gap: 18px; position: relative; margin-bottom: 22px; padding-right: 36px; }
+  .warn-icon {
+    flex-shrink: 0; width: 52px; height: 52px; border-radius: 12px;
+    display: grid; place-items: center;
+    background: rgba(255, 200, 87, 0.12);
+    border: 1px solid rgba(255, 200, 87, 0.4);
+    color: var(--yellow);
+    animation: iconFloat 3s ease-in-out infinite;
+  }
+  .warn-icon svg { width: 26px; height: 26px; }
+  @keyframes iconFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
+  .warn-title {
+    font-size: clamp(20px, 3vw, 24px); font-weight: 800; letter-spacing: -0.02em;
+    color: #ffd987; line-height: 1.2;
+  }
+  .warn-subtitle {
+    color: var(--text-dim); font-size: 13.5px; margin-top: 8px; line-height: 1.6;
+  }
+  .warn-subtitle strong { color: var(--text); }
+
+  .warn-list { list-style: none; display: flex; flex-direction: column; gap: 12px; position: relative; margin-top: 8px; }
+  .warn-list li {
+    display: flex; align-items: flex-start; gap: 14px;
+    padding: 14px 16px; border-radius: var(--radius-sm);
+    background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 200, 87, 0.15);
+    font-size: 13.5px; color: var(--text); line-height: 1.55;
+    transition: border 0.25s, background 0.25s, transform 0.25s;
+  }
+  .warn-list li:hover { border-color: rgba(255, 200, 87, 0.4); background: rgba(0, 0, 0, 0.5); transform: translateX(4px); }
+  .warn-list li strong { color: #ffd987; }
+  .warn-num {
+    flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%;
+    display: grid; place-items: center;
+    font-family: var(--mono); font-size: 13px; font-weight: 700;
+    background: linear-gradient(135deg, var(--yellow), #ff9d2f);
+    color: #1a1206;
+    box-shadow: 0 0 12px rgba(255, 200, 87, 0.4);
+  }
+
+  .warn-note {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 18px; padding: 14px 18px; border-radius: var(--radius-sm);
+    background: rgba(61, 220, 151, 0.06); border: 1px solid rgba(61, 220, 151, 0.25);
+    color: var(--text-dim); font-size: 13px; line-height: 1.55; position: relative;
+  }
+  .warn-note-ico {
+    flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 14px; font-weight: 700;
+    background: rgba(61, 220, 151, 0.15); color: var(--green);
+    border: 1px solid rgba(61, 220, 151, 0.4);
+  }
+  .warn-note strong { color: var(--green); }
+
+  @media (max-width: 560px) {
+    .warn-card { padding: 24px 20px; }
+    .modal-actions { flex-direction: column-reverse; }
+    .modal-actions .btn { width: 100%; justify-content: center; }
+    .warn-head { gap: 14px; padding-right: 30px; }
+    .warn-icon { width: 44px; height: 44px; }
+    .warn-icon svg { width: 22px; height: 22px; }
+  }
+
+  /* ---------- Сервера ---------- */
+  .servers {
+    max-width: 1440px; margin: 0 auto;
+    padding: 0 28px 60px;
+    animation: fadeUp 0.8s 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .servers-head { margin-bottom: 28px; }
+  .servers-eyebrow {
+    font-family: var(--mono); font-size: 11px; color: var(--accent-2);
+    text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 10px;
+  }
+  .servers-title { font-size: clamp(26px, 4vw, 36px); font-weight: 800; letter-spacing: -0.03em; }
+  .servers-sub { color: var(--text-dim); margin-top: 10px; font-size: 15px; max-width: 640px; }
+  .servers-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+  }
+  .server-card {
+    padding: 22px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius);
+    transition: transform 0.3s, border 0.3s, box-shadow 0.3s;
+    position: relative; overflow: hidden;
+  }
+  .server-card.featured {
+    border-color: var(--accent);
+    background: linear-gradient(180deg, var(--accent-soft) 0%, var(--panel) 60%);
+    box-shadow: 0 0 0 1px var(--accent-soft), 0 8px 24px rgba(47, 116, 241, 0.12);
+  }
+  .server-card.featured::before {
+    content: 'Рекомендуем'; position: absolute; top: 14px; right: 14px;
+    font-family: var(--mono); font-size: 10px; color: var(--accent-2);
+    padding: 3px 8px; background: var(--accent-soft); border: 1px solid var(--accent);
+    border-radius: 100px; text-transform: uppercase; letter-spacing: 0.1em;
+  }
+  /* Карточка "Любой сервер" — выделенная, с дэш-контуром */
+  .server-card.server-any {
+    border: 1px dashed rgba(47, 116, 241, 0.5);
+    background:
+      radial-gradient(circle at 50% 0%, rgba(47, 116, 241, 0.10), transparent 60%),
+      var(--panel);
+  }
+  .server-any-ico {
+    width: 44px; height: 44px; border-radius: 10px;
+    display: grid; place-items: center; margin-bottom: 14px;
+    background: var(--accent-soft); border: 1px solid var(--accent);
+    color: var(--accent-2);
+    animation: anySpin 8s linear infinite;
+  }
+  .server-any-ico svg { width: 24px; height: 24px; }
+  @keyframes anySpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  .server-card:hover { transform: translateY(-4px); border-color: var(--accent); box-shadow: 0 12px 32px rgba(47, 116, 241, 0.18); }
+  .server-name { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+  .server-domain { font-family: var(--mono); font-size: 12px; color: var(--text-mute); margin-top: 4px; }
+  .server-stats { display: flex; gap: 16px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .server-stat .v { font-family: var(--mono); font-size: 18px; font-weight: 700; color: var(--text); }
+  .server-stat .l { font-size: 11px; color: var(--text-mute); text-transform: uppercase; letter-spacing: 0.05em; }
+  .server-status {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 14px;
+    font-size: 12px; color: var(--green); font-family: var(--mono);
+  }
+  .server-status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 1.4s ease-in-out infinite; }
+  .servers-all {
+    margin-top: 18px; padding: 18px 22px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  }
+  .servers-all-text { font-size: 14px; color: var(--text-dim); }
+  .servers-all-text strong { color: var(--text); }
+
+  /* ---------- Фичи ---------- */
+  .features {
+    max-width: 1440px; margin: 0 auto;
+    padding: 0 28px 60px;
+    animation: fadeUp 0.8s 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .features-head { text-align: center; margin-bottom: 32px; }
+  .features-eyebrow {
+    font-family: var(--mono); font-size: 11px; color: var(--accent-2);
+    text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 10px;
+  }
+  .features-title { font-size: clamp(26px, 4vw, 36px); font-weight: 800; letter-spacing: -0.03em; }
+  .features-sub { color: var(--text-dim); margin-top: 8px; font-size: 15px; }
+
+  .feat-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px;
+  }
+  .feat-card {
+    padding: 24px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius);
+    transition: transform 0.3s, border 0.3s, box-shadow 0.3s;
+    position: relative; overflow: hidden;
+  }
+  .feat-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    transform: scaleX(0); transition: transform 0.4s;
+  }
+  .feat-card:hover { transform: translateY(-4px); border-color: var(--border-2); box-shadow: 0 12px 32px rgba(0,0,0,0.6); }
+  .feat-card:hover::before { transform: scaleX(1); }
+  .feat-ico {
+    width: 44px; height: 44px; border-radius: 10px;
+    display: grid; place-items: center; font-size: 20px;
+    background: var(--accent-soft); color: var(--accent-2);
+    margin-bottom: 16px; transition: transform 0.3s;
+  }
+  .feat-card:hover .feat-ico { transform: scale(1.1) rotate(-5deg); }
+  .feat-title { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+  .feat-desc { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+
+  /* ---------- CTA секция ---------- */
+  .cta {
+    max-width: 1440px; margin: 0 auto; padding: 0 28px 80px;
+    animation: fadeUp 0.8s 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  .cta-card {
+    position: relative; padding: 48px 40px;
+    border-radius: 20px; overflow: hidden;
+    background:
+      radial-gradient(circle at 20% 50%, rgba(47, 116, 241, 0.22), transparent 60%),
+      linear-gradient(135deg, #050507 0%, #000000 100%);
+    border: 1px solid var(--border-2);
+    text-align: center;
+  }
+  .cta-card::after {
+    content: ''; position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(47, 116, 241, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(47, 116, 241, 0.06) 1px, transparent 1px);
+    background-size: 24px 24px;
+    mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+    -webkit-mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .cta-title { font-size: clamp(28px, 4vw, 40px); font-weight: 800; letter-spacing: -0.03em; position: relative; }
+  .cta-title .grad {
+    background: linear-gradient(135deg, var(--accent-2), var(--accent));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .cta-sub { color: var(--text-dim); margin-top: 12px; font-size: 15px; position: relative; }
+  .cta-actions { margin-top: 28px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; position: relative; }
+
+  /* ---------- Футер ---------- */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 28px;
+    text-align: center; color: var(--text-mute); font-size: 13px;
+  }
+  footer .heart { color: var(--red); display: inline-block; animation: heartBeat 1.2s ease-in-out infinite; }
+  @keyframes heartBeat {
+    0%, 100% { transform: scale(1); }
+    25% { transform: scale(1.2); }
+    50% { transform: scale(0.95); }
+  }
+
+  /* ---------- Адаптивность ---------- */
+  @media (max-width: 1200px) {
+    .servers-grid { grid-template-columns: repeat(2, 1fr); }
+    .feat-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 820px) {
+    .nav-links { display: none; }
+    .nav-inner { padding: 12px 16px; }
+    .features, .servers, .cta { padding-left: 16px; padding-right: 16px; }
+    .feat-grid, .servers-grid { grid-template-columns: 1fr; }
+    .cta-card { padding: 32px 20px; }
+    .hero { padding: 50px 20px 40px; }
+  }
+  @media (max-width: 480px) {
+    .nav-cta { display: none; }
+    .search-box input { width: 70px; }
+    .servers-all { flex-direction: column; align-items: flex-start; }
+  }
+  @keyframes glitch {
+    0% { transform: translate(0); }
+    25% { transform: translate(-2px, 1px); filter: hue-rotate(45deg); }
+    50% { transform: translate(2px, -1px); filter: hue-rotate(-45deg); }
+    75% { transform: translate(-1px, -2px); filter: hue-rotate(90deg); }
+    100% { transform: translate(0); filter: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="bg-layer"></div>
+  <div class="bg-grid"></div>
+  <div class="particles" id="particles"></div>
+
+  <!-- Навигация -->
+  <nav class="nav">
+    <div class="nav-inner">
+      <div class="brand">
+        <div class="brand-logo">S</div>
+        <div>
+          <div class="brand-name">System <span class="brand-tag">v3.2</span></div>
+        </div>
+      </div>
+      <div class="nav-links">
+        <a href="#features" class="nav-link active">Возможности</a>
+        <a href="#servers" class="nav-link">Сервера</a>
+        <a href="#" class="nav-link">Документация</a>
+      </div>
+      <button class="nav-cta" data-download>Скачать</button>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-eyebrow">
+      <span class="dot"></span>
+      БЕЗ АВТОРИЗАЦИИ · КРЯК-ВЕРСИЯ
+    </div>
+    <h1 class="hero-title">
+      Знай больше.<br>
+      <span class="grad">Побеждай с System.</span>
+    </h1>
+    <p class="hero-sub">
+      Поднимите свой игровой процесс на новый уровень. Контроль, скорость и точность — всё уже внутри.
+    </p>
+    <div class="hero-actions">
+      <button class="btn btn-primary" data-download>⬇ Скачать бесплатно</button>
+      <a href="#features" class="btn btn-ghost">Возможности</a>
+    </div>
+    <div class="hero-meta">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      Windows · Minecraft Java 1.21+
+    </div>
+  </section>
+
+  <!-- Плашка-предупреждение перед скачиванием -->
+  <!-- Модальное окно-предупреждение (появляется при клике на Скачать) -->
+  <div class="modal-overlay" id="warnModal" aria-hidden="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="warnTitle">
+      <button class="modal-close" id="warnClose" aria-label="Закрыть">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="warn-card">
+        <div class="warn-head">
+          <div class="warn-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 9v4M12 17h.01M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.7 3.86a2 2 0 0 0-3.42 0z"/></svg>
+          </div>
+          <div>
+            <h2 class="warn-title" id="warnTitle">Отключите антивирус перед скачиванием</h2>
+            <p class="warn-subtitle">System — чит-клиент: он внедряет DLL в игру и меняет поведение Minecraft, поэтому Windows Defender и сторонние антивирусы могут выдавать ошибки, блокировать установку или удалять файл.</p>
+          </div>
+        </div>
+
+        <ul class="warn-list">
+          <li>
+            <span class="warn-num">1</span>
+            <div>Временно отключите антивирус на время скачивания и установки <strong>(Windows Defender, Avast, Kaspersky и пр.)</strong></div>
+          </li>
+          <li>
+            <span class="warn-num">2</span>
+            <div>Добавьте папку с клиентом в исключения антивируса — иначе DLL-файлы будут удалены</div>
+          </li>
+          <li>
+            <span class="warn-num">3</span>
+            <div>Если браузер или система блокирует загрузку — разрешите сохранение файла</div>
+          </li>
+        </ul>
+
+        <div class="warn-note">
+          <span class="warn-note-ico">ⓘ</span>
+          <span>Клиент <strong>не содержит вирусов</strong> — антивирусы реагируют на внедрение DLL, необходимое для защиты Minecraft.</span>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn btn-ghost" id="warnCancel">Отмена</button>
+          <a href="https://github.com/NezukoPlay/sys/raw/main/SystemDLC.exe" class="btn btn-primary modal-confirm" id="warnConfirm" download>
+            <span class="confirm-ico">⬇</span>
+            <span>Понятно, скачать</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Сервера -->
+  <section class="servers" id="servers">
+    <div class="servers-head">
+      <div class="servers-eyebrow">/ Совместимость</div>
+      <h2 class="servers-title">Работает на всех серверах</h2>
+      <p class="servers-sub">System полностью совместим с любыми серверами Minecraft Java. Протестировано и оптимизировано под самые популярные русскоязычные проекты.</p>
+    </div>
+    <div class="servers-grid">
+      <div class="server-card featured">
+        <div class="server-name">FunTime</div>
+        <div class="server-domain">mc.funtime.ru</div>
+        <div class="server-stats">
+          <div class="server-stat"><div class="v">99.9%</div><div class="l">Совместимость</div></div>
+          <div class="server-stat"><div class="v">12k+</div><div class="l">Онлайн</div></div>
+        </div>
+        <div class="server-status"><span class="dot"></span> Стабильно работает</div>
+      </div>
+      <div class="server-card featured">
+        <div class="server-name">SpookyTime</div>
+        <div class="server-domain">play.spookytime.net</div>
+        <div class="server-stats">
+          <div class="server-stat"><div class="v">99.7%</div><div class="l">Совместимость</div></div>
+          <div class="server-stat"><div class="v">8k+</div><div class="l">Онлайн</div></div>
+        </div>
+        <div class="server-status"><span class="dot"></span> Стабильно работает</div>
+      </div>
+      <div class="server-card featured">
+        <div class="server-name">ReallyWorld</div>
+        <div class="server-domain">mc.reallyworld.ru</div>
+        <div class="server-stats">
+          <div class="server-stat"><div class="v">99.5%</div><div class="l">Совместимость</div></div>
+          <div class="server-stat"><div class="v">15k+</div><div class="l">Онлайн</div></div>
+        </div>
+        <div class="server-status"><span class="dot"></span> Стабильно работает</div>
+      </div>
+      <div class="server-card server-any">
+        <div class="server-any-ico">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+        </div>
+        <div class="server-name">Любой сервер</div>
+        <div class="server-domain">ваш сервер или лаунчер</div>
+        <div class="server-stats">
+          <div class="server-stat"><div class="v">100%</div><div class="l">Совместимость</div></div>
+          <div class="server-stat"><div class="v">∞</div><div class="l">Сборок</div></div>
+        </div>
+        <div class="server-status" style="color:var(--accent-2);"><span class="dot" style="background:var(--accent);box-shadow:0 0 8px var(--accent-glow);"></span> Готов к запуску</div>
+      </div>
+    </div>
+    <div class="servers-all">
+      <div class="servers-all-text">Поддержка всех версий Minecraft Java <strong>1.21+</strong> — локальные сервера, лаунчеры и пользовательские сборки.</div>
+      <button class="btn btn-ghost" data-download>⬇ Скачать клиент</button>
+    </div>
+  </section>
+
+  <!-- Фичи -->
+  <section class="features" id="features">
+    <div class="features-head">
+      <div class="features-eyebrow">/ Возможности</div>
+      <h2 class="features-title">Почему именно System</h2>
+      <p class="features-sub">Современная модификация Minecraft с эффектным визуалом, плавной производительностью и стильным интерфейсом</p>
+    </div>
+    <div class="feat-grid">
+      <div class="feat-card">
+        <div class="feat-ico">⚡</div>
+        <div class="feat-title">Высокая производительность</div>
+        <div class="feat-desc">Оптимизированный рендер-движок держит стабильные 240+ FPS даже на слабых сборках без просадок.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-ico">🎨</div>
+        <div class="feat-title">Кастомизация интерфейса</div>
+        <div class="feat-desc">Десятки пресетов, цветовых тем и режимов отображения. Настройте HUD до последнего пикселя.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-ico">🛡️</div>
+        <div class="feat-title">Обход проверок на читы</div>
+        <div class="feat-desc">Обходит популярные анти-читы и системы верификации серверов. Обновления выходят каждую неделю.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-ico">🌍</div>
+        <div class="feat-title">Работает на всех серверах</div>
+        <div class="feat-desc">Полная совместимость с FunTime, SpookyTime, ReallyWorld и любыми пользовательскими сборками Minecraft Java.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-ico">🔌</div>
+        <div class="feat-title">Модульная система</div>
+        <div class="feat-desc">Более 70 модулей: бой, движение, отрисовка, визуал. Включайте только то, что нужно вам.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-ico">🔄</div>
+        <div class="feat-title">Регулярные обновления</div>
+        <div class="feat-desc">Новые модули, фиксы и оптимизации выходят каждую неделю. Авто-обновление встроено прямо в клиент.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta">
+    <div class="cta-card">
+      <h2 class="cta-title">Начни использовать <span class="grad">System</span> прямо сейчас</h2>
+      <p class="cta-sub">Скачай клиент, настрой под себя и доминируй на любом сервере. Полностью бесплатно.</p>
+      <div class="cta-actions">
+        <button class="btn btn-primary" data-download>⬇ Скачать бесплатно</button>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    © 2026 System Client · Без авторизации · Кряк-версия. Сделано с <span class="heart">❤</span> для комьюнити Minecraft.
+  </footer>
+
+  <script>
+    /* ---------- Частицы ---------- */
+    (function() {
+      const container = document.getElementById('particles');
+      const count = 28;
+      for (let i = 0; i < count; i++) {
+        const p = document.createElement('div');
+        p.className = 'particle';
+        p.style.left = Math.random() * 100 + '%';
+        p.style.animationDuration = (8 + Math.random() * 12) + 's';
+        p.style.animationDelay = (Math.random() * 12) + 's';
+        const size = 1 + Math.random() * 3;
+        p.style.width = size + 'px';
+        p.style.height = size + 'px';
+        container.appendChild(p);
+      }
+    })();
+
+    /* ---------- Появление при скролле для карточек ---------- */
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.style.opacity = '1';
+          e.target.style.transform = 'translateY(0)';
+          io.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.15 });
+    document.querySelectorAll('.feat-card, .server-card').forEach((c, i) => {
+      c.style.opacity = '0';
+      c.style.transform = 'translateY(20px)';
+      c.style.transition = `opacity 0.6s ${i * 0.08}s ease, transform 0.6s ${i * 0.08}s ease, border 0.3s, box-shadow 0.3s`;
+      io.observe(c);
+    });
+
+    /* ---------- Модальное окно-предупреждение ---------- */
+    const modal = document.getElementById('warnModal');
+    const modalCard = modal.querySelector('.modal-card');
+    const btnClose = document.getElementById('warnClose');
+    const btnCancel = document.getElementById('warnCancel');
+    const btnConfirm = document.getElementById('warnConfirm');
+    let lastFocused = null;
+    let isAnimating = false;
+
+    function openModal() {
+      if (isAnimating || modal.classList.contains('open')) return;
+      isAnimating = true;
+      lastFocused = document.activeElement;
+      modal.classList.add('open');
+      modal.setAttribute('aria-hidden', 'false');
+      document.body.style.overflow = 'hidden';
+      // Перенос фокуса на кнопку подтверждения после анимации появления
+      setTimeout(() => {
+        btnConfirm.focus();
+        isAnimating = false;
+      }, 450);
+    }
+
+    function closeModal() {
+      if (isAnimating) return;
+      isAnimating = true;
+      modal.classList.remove('open');
+      modal.setAttribute('aria-hidden', 'true');
+      document.body.style.overflow = '';
+      // Сброс stagger-анимаций, чтобы при следующем открытии проиграть заново
+      setTimeout(() => {
+        if (lastFocused) lastFocused.focus();
+        isAnimating = false;
+      }, 350);
+    }
+
+    // Любая кнопка [data-download] открывает модалку
+    document.querySelectorAll('[data-download]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        openModal();
+      });
+    });
+
+    // Кнопка подтверждения — запускает реальное скачивание и закрывает модалку
+    btnConfirm.addEventListener('click', () => {
+      // даём браузеру стартовать загрузку, затем закрываем
+      setTimeout(closeModal, 200);
+    });
+
+    // Крестик и кнопка «Отмена»
+    btnClose.addEventListener('click', closeModal);
+    btnCancel.addEventListener('click', closeModal);
+
+    // Клик по тёмному фону вне карточки
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+
+    // Esc для закрытия
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && modal.classList.contains('open')) closeModal();
+    });
+
+    /* ---------- Glitch на лого при наведении ---------- */
+    const logo = document.querySelector('.brand-logo');
+    logo.addEventListener('mouseenter', () => {
+      logo.style.animation = 'none';
+      void logo.offsetHeight;
+      logo.style.animation = 'logoPulse 3s ease-in-out infinite, glitch 0.4s steps(2) 2';
+    });
+  </script>
+</body>
+</html>
